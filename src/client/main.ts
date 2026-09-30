@@ -1,4 +1,8 @@
 import './style.css';
+import { LocalCoworkers } from './world/local-coworkers';
+import { configureLocalSeating, localApi, openLocalDirectory, openLocalSession } from './ui/local-sessions';
+import { openOfficeBrowser } from './ui/browser';
+import type { LocalSession } from '../shared/local-sessions';
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { sameLook } from '../shared/avatar';
@@ -149,12 +153,29 @@ scene.add(sun);
 
 const office = buildOffice();
 scene.add(office.group);
+const localCoworkers = new LocalCoworkers();
+office.group.add(localCoworkers.root);
+let localAvailable = false;
+async function refreshLocalCoworkers() {
+  try {
+    const { sessions } = await localApi<{ sessions: LocalSession[] }>();
+    localCoworkers.sync(sessions);
+    localAvailable = true;
+  } catch { localCoworkers.sync([]); localAvailable = false; }
+  hud.refresh();
+  setTimeout(refreshLocalCoworkers, 10000);
+}
 /**
  * The building's map as it's built (see shared/maps and world/world.ts): the office, or a map of
  * its own (the castle). Only one is in the scene at a time, like the office and the rooftop.
  */
 const theOffice = officeWorld(office, () => office.stack.state.index > 0, () => officeWing());
 let world: World = theOffice;
+configureLocalSeating({
+  choices: (key) => localCoworkers.choices(key),
+  seat: (key) => localCoworkers.seat(key),
+  move: (key, desk) => localCoworkers.move(key, desk),
+});
 /** Whether the building's on the office's own map, with everything that has (the elevator, the balcony, the lounge…). */
 const inOffice = () => world === theOffice;
 /** Where everything is on the building's map: its seats by id, and places to sit. */
@@ -1606,7 +1627,7 @@ function setPlace() {
 /** What you can use where you are, and what's in the way of looking at it. */
 function usable(): Interactable[][] {
   if (upTop && roof) return [roof.interactables];
-  return inOffice() ? [office.interactables, gallery.interactables, dog.interactables, ball.interactables] : [world.interactables, court?.interactables ?? []];
+  return inOffice() ? [localCoworkers.interactables, office.interactables, gallery.interactables, dog.interactables, ball.interactables] : [world.interactables, court?.interactables ?? []];
 }
 
 /**
@@ -2896,9 +2917,12 @@ function watchShare() {
 /** `note` is the issue note you're pointing at on the issues board, if any (see aimedNote). */
 function interact(target: Interactable | null, key: DeskKey, note = aimedNote) {
   if (!target) return;
+  if (target.kind === 'local-session') return key === 'E' && target.sessionKey ? openLocalSession(target.sessionKey) : undefined;
   if (target.kind !== 'issues') note = null;
   if (key === 'E' && carrying && dropCard(target, carrying, note)) return;
   if (target.kind === 'desk' && target.deskId) {
+    const local = localCoworkers.atDesk(target.deskId);
+    if (local && (key === 'E' || key === 'P')) return openLocalSession(local.key);
     if (key === 'L') return openDeskLabel(net, target.deskId);
     const w = store.workerAtDesk(target.deskId);
     // Nobody is hired at the meeting table: a meeting seats its own workers there.
@@ -3649,8 +3673,13 @@ function hintFor(it: Interactable): Hint {
   const title = (text: string) => h('span.title', {}, text);
   const board = (name: string): Hint => ({ k: '', parts: [title(name), key('E', 'Open')] });
   switch (it.kind) {
-    case 'desk':
+    case 'local-session':
+      return { k: it.sessionKey ?? '', parts: [title(clip(it.label ?? 'Local coworker', 60)), key('E', 'Talk to coworker')] };
+    case 'desk': {
+      const local = it.deskId && localCoworkers.atDesk(it.deskId);
+      if (local) return { k: local.key, parts: [title(clip(local.title, 60)), key('E', 'Talk to coworker')] };
       return it.deskId ? deskHint(it.deskId) : { k: '', parts: [] };
+    }
     case 'station':
       return it.deskId ? stationHint(it.deskId) : { k: '', parts: [] };
     case 'issues':
@@ -4312,7 +4341,7 @@ document.addEventListener('pointerlockchange', () => {
 const raycaster = new THREE.Raycaster();
 const CROSSHAIR = new THREE.Vector2(0, 0);
 /** How close (meters from your eyes) you must be to use each kind of thing. */
-const REACH: Record<InteractKind, number> = { desk: 4.5, station: 4.5, coffee: 3, issues: 9, pulls: 9, services: 9, queue: 9, tv: 10, decor: 9, smoke: 3, elevator: 4.5, gong: 3.5, dog: 3.2, jukebox: 4, seat: 3, whiteboard: 7, cabinet: 4, ladder: 3, pole: 4, meeting: 7, bar: 3.5, dj: 6, golf: 3.5, ball: 3.2, bookshelf: 4, darts: 4, axe: 5.5, telescope: 3.5, car: 4, expand: 8, herald: 5 };
+const REACH: Record<InteractKind, number> = { 'local-session': 4.5, desk: 4.5, station: 4.5, coffee: 3, issues: 9, pulls: 9, services: 9, queue: 9, tv: 10, decor: 9, smoke: 3, elevator: 4.5, gong: 3.5, dog: 3.2, jukebox: 4, seat: 3, whiteboard: 7, cabinet: 4, ladder: 3, pole: 4, meeting: 7, bar: 3.5, dj: 6, golf: 3.5, ball: 3.2, bookshelf: 4, darts: 4, axe: 5.5, telescope: 3.5, car: 4, expand: 8, herald: 5 };
 const eye = new THREE.Vector3();
 
 /** What the ray through `ndc` lands on first, whether it is within reach (plus `slack` meters), and where it hit. */
@@ -4494,6 +4523,8 @@ const waitingNow = () => waitingInOrder(store.workers.values());
 const noMedia = () => (window.isSecureContext ? undefined : 'Voice and screen sharing need HTTPS or localhost — use a TLS proxy, --self-signed, or an SSH tunnel');
 const hud = mountHud(
   [
+    { id: 'local-sessions', icon: '👋', label: 'Local coworkers', section: 'Open', status: () => localAvailable, chip: () => 'Local coworkers', shown: () => store.me.admin, run: openLocalDirectory },
+    { id: 'browser', icon: '🌐', label: 'Office browser', section: 'Open', status: () => true, chip: () => 'Browser', run: () => openOfficeBrowser() },
     { id: 'issues', icon: '📌', label: 'Issues', section: 'Open', count: () => store.issues.items.filter((i) => i.state === 'OPEN').length, run: () => openBoard('issues', net, boardActions()) },
     { id: 'pulls', icon: '🔀', label: 'Pull requests', section: 'Open', count: () => store.pulls.items.filter((p) => p.state === 'OPEN').length, run: () => openBoard('pulls', net, boardActions()) },
     { id: 'queue', icon: '📋', label: 'Task queue', section: 'Open', count: () => store.queue.tasks.filter((t) => t.status !== 'done').length, title: () => 'Issues and tasks waiting for a worker', run: showQueue },
@@ -4652,6 +4683,8 @@ function frame(ts?: number) {
   const delta = timer.getDelta();
   const dt = Math.min(delta, 0.1);
   const t = timer.getElapsed();
+  localCoworkers.context(store.floor, world.desks, [...store.workers.values()].map((w) => w.deskId), inOffice());
+  localCoworkers.update(dt, t);
   const now = performance.now();
   if (slowFrames.frame(now, delta * 1000)) offer2d('slow');
 
@@ -4958,6 +4991,7 @@ void whoami().then(() => {
   if (saved && store.me.account) saved.name = store.me.account.name;
   if (store.me.account) store.profile.name = store.me.account.name;
   store.emit('me');
+  void refreshLocalCoworkers();
   if (saved?.look) {
     store.profile = { ...saved, look: saved.look };
     showMyProfile(store.profile);

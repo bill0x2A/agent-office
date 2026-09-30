@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { LocalSessions } from './local-sessions.js';
 import https from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -205,6 +206,8 @@ const SEARCH_CHAT_HITS = 50;
 const SEARCH_TERMINAL_HITS = 25;
 
 export async function startServer(cfg: Config) {
+  const localSessions = new LocalSessions();
+  const localEnabled = ['127.0.0.1', 'localhost', '::1'].includes(cfg.host);
   const publicDir = findPublicDir();
   const accounts = new Accounts(cfg.dataDir);
   const auth = new Auth(cfg.verifier, cfg.salt, cfg.secret, accounts);
@@ -934,6 +937,23 @@ export async function startServer(cfg: Config) {
         // Back to the 2D view after signing in, if that's where they were going.
         res.writeHead(302, { location: p === '/lite' ? '/login?next=/lite' : '/login' }).end();
         return;
+      }
+      if (p === '/api/local-sessions' || p === '/api/local-sessions/chat') {
+        res.setHeader('Cache-Control', 'no-store');
+        if (!localEnabled || !meOf(session.account?.id).admin) return send(res, 403, { error: 'Local coworkers are available to admins in an office listening on localhost.' });
+        try {
+          if (p === '/api/local-sessions' && req.method === 'GET') {
+            const key = url.searchParams.get('key');
+            return send(res, 200, key ? await localSessions.detail(key) : { sessions: await localSessions.list() });
+          }
+          if (p === '/api/local-sessions/chat' && req.method === 'POST') {
+            if (!sameOrigin(req, cfg)) return send(res, 403, { error: 'Forbidden' });
+            const body = JSON.parse(await readBody(req, 64000));
+            if (typeof body?.key !== 'string' || typeof body?.message !== 'string') return send(res, 400, { error: 'A session and message are required' });
+            return send(res, 202, await localSessions.send(body.key, body.message));
+          }
+          return send(res, 405, { error: 'Method not allowed' });
+        } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : 'Could not read local sessions' }); }
       }
       if (p === '/api/whoami') return send(res, 200, { ok: true, me: meOf(session.account?.id) });
       if (p === '/api/agents/opencode/models' && req.method === 'GET') {
@@ -2503,6 +2523,7 @@ export async function startServer(cfg: Config) {
 
   /** With `keep` (a restart), workers' terminals keep running for the next office to pick up. */
   const shutdown = (keep = false) => {
+    localSessions.shutdown();
     clearInterval(heartbeat);
     clearInterval(resync);
     clearTimeout(floorsTimer);

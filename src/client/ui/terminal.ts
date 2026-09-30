@@ -1,3 +1,5 @@
+import { openOfficeBrowser } from './browser';
+import { serviceUrl } from './services';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -123,6 +125,7 @@ export function openTerminal(net: Net, workerId: string, onChanges?: () => void,
     'aria-label': 'Send Esc to the terminal',
   }, '⎋ Esc');
   const changesBtn = h('button.btn', { type: 'button', title: 'What this worker changed: files, diff, commit, open a PR (C at the desk)' }, '🌿 Changes');
+  const browserBtn = h('button.btn', { type: 'button', onclick: () => { const service = store.services.items.find((s) => s.workerId === workerId); openOfficeBrowser(service ? serviceUrl(service.port) : ''); } }, '🌐 Browser');
   const closeBtn = h('button.btn.close', { title: 'Leave terminal (Esc or Ctrl+]) · ⎋ Esc or Ctrl+[ sends Esc to the terminal', 'aria-label': 'Close' }, '✕');
   const host = h('div.term-host', { 'data-drop': '📎 Drop screenshots or files here to put them in the terminal' });
   const keys = h('div.term-keys', { role: 'group', 'aria-label': 'Keys' });
@@ -131,7 +134,7 @@ export function openTerminal(net: Net, workerId: string, onChanges?: () => void,
   const sayForm = h('form.term-say', {}, say, sayBtn);
   const keypad = opts.keypad ? h('div.term-keypad', {}, keys, sayForm) : null;
   // The keypad has an Esc of its own.
-  const el = h('div.modal.term', { role: 'dialog', 'aria-label': `${info.name} terminal` }, h('header', {}, dot, title, pill, cost, viewers, typed, modelsBtn, keypad ? null : escBtn, onChanges ? changesBtn : null, closeBtn), host, keypad);
+  const el = h('div.modal.term', { role: 'dialog', 'aria-label': `${info.name} terminal` }, h('header', {}, dot, title, pill, cost, viewers, typed, modelsBtn, keypad ? null : escBtn, onChanges ? changesBtn : null, browserBtn, closeBtn), host, keypad);
 
   const term = new Terminal({
     fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
