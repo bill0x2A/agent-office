@@ -1,3 +1,4 @@
+import { openIntegration } from './ui/integrations';
 import './style.css';
 import { LocalCoworkers } from './world/local-coworkers';
 import { configureLocalSeating, localApi, openLocalDirectory, openLocalSession } from './ui/local-sessions';
@@ -4524,6 +4525,8 @@ const noMedia = () => (window.isSecureContext ? undefined : 'Voice and screen sh
 const hud = mountHud(
   [
     { id: 'local-sessions', icon: '👋', label: 'Local coworkers', section: 'Open', status: () => localAvailable, chip: () => 'Local coworkers', shown: () => store.me.admin, run: openLocalDirectory },
+    { id: 'linear', icon: '◈', label: 'Linear', section: 'Open', status: () => true, chip: () => 'Linear', shown: () => store.me.admin, run: () => openIntegration('linear', (issue) => openQueue(net, { openTerminal: openWorkerTerminal }, { title: `${issue.identifier} ${issue.title}`, prompt: `Work on Linear issue ${issue.identifier}: ${issue.title}\n${issue.url}\n\n${issue.description ?? ''}` })) },
+    { id: 'slack', icon: '💬', label: 'Slack', section: 'Open', status: () => true, chip: () => 'Slack', shown: () => store.me.admin, run: () => openIntegration('slack', () => {}) },
     { id: 'browser', icon: '🌐', label: 'Office browser', section: 'Open', status: () => true, chip: () => 'Browser', run: () => openOfficeBrowser() },
     { id: 'issues', icon: '📌', label: 'Issues', section: 'Open', count: () => store.issues.items.filter((i) => i.state === 'OPEN').length, run: () => openBoard('issues', net, boardActions()) },
     { id: 'pulls', icon: '🔀', label: 'Pull requests', section: 'Open', count: () => store.pulls.items.filter((p) => p.state === 'OPEN').length, run: () => openBoard('pulls', net, boardActions()) },

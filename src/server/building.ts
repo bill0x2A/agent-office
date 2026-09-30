@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FLOOR_PALETTES, MAX_FLOORS, normalizeRepo, sameRepo } from '../shared/floors.js';
@@ -210,6 +210,43 @@ export class Building {
     this.defs.push(def);
     this.save();
     return def;
+  }
+
+  /** Open a folder in place, or create one new, empty folder. No GitHub or git required. */
+  addLocal(raw: string, create: boolean, by: string): FloorDef | string {
+    const typed = untildify(raw.trim());
+    if (!typed || !path.isAbsolute(typed) || typed.includes('\0')) return 'Use a full folder path, like ~/code/my-project';
+    if (this.defs.length + this.cloning.size >= MAX_FLOORS) return `The building is full (${MAX_FLOORS} floors)`;
+    let dir = path.resolve(typed);
+    try {
+      if (create) {
+        // Exclusive creation prevents accidentally adopting a non-empty existing project.
+        const parent = realpathSync(path.dirname(dir));
+        if (!statSync(parent).isDirectory()) return 'The parent must be a folder';
+        dir = path.join(parent, path.basename(dir));
+        mkdirSync(dir);
+      }
+      dir = realpathSync(dir);
+      if (!statSync(dir).isDirectory()) return 'Choose a folder, not a file';
+      accessSync(dir, constants.R_OK | constants.W_OK | constants.X_OK);
+      const known = this.defs.find((d) => {
+        try { return realpathSync(d.dir) === dir; } catch { return path.resolve(d.dir) === dir; }
+      });
+      if (known) return `${known.name} already has a floor`;
+      const def = this.newDef(path.basename(dir), originRepo(dir), dir, by);
+      this.defs.push(def);
+      if (this.local && path.resolve(this.local.dir) === dir) {
+        this.localId = def.id;
+        this.setLocalOff(undefined);
+      }
+      this.save();
+      return def;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      return code === 'EEXIST' ? 'That folder already exists. Choose Open existing folder.'
+        : code === 'ENOENT' ? 'Folder not found. To create a project, choose an existing parent folder.'
+        : 'Could not open that folder. Check its path and permissions.';
+    }
   }
 
   /** Repositories the office's `gh` login can clone, most recently pushed first. */

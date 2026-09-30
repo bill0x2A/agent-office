@@ -11,6 +11,8 @@ npm start
 
 Open the localhost address printed in the terminal. **Local coworkers** shows your existing conversations; click an orange Claude or teal Codex character to read its history and chat in a separate continuation. **Browser** opens previews inside the office. [Local coworker behavior, controls, and limitations](docs/local-coworkers.md).
 
+The **Elevator → Local project** opens an existing folder or creates a new one, with no GitHub requirement. **Linear** shows issues for the current floor and turns them into editable coworker task drafts. **Slack** opens a channel reader inside the office. Connect each service once from its panel, then save a team/project or channel for each floor. See [local projects and integrations](docs/local-projects-integrations.md) for setup and token scopes.
+
 Use the source checkout instructions above for this fork. The original project's release installers and cloud deployment recipes below still target upstream and are retained for reference; do not use them to install or update this fork.
 
 ---

@@ -33,7 +33,7 @@ function outcome(t: QueueTask): string {
   }
 }
 
-export function openQueue(net: Net, actions: QueueActions) {
+export function openQueue(net: Net, actions: QueueActions, draft?: { prompt: string; title: string }) {
   const body = h('div.body.queue');
   const close = h('button.btn.close', { 'aria-label': 'Close' }, '✕');
   const limitValue = h('b');
@@ -51,6 +51,7 @@ export function openQueue(net: Net, actions: QueueActions) {
   );
 
   const ta = h('textarea', { rows: 2, placeholder: 'Describe a task for the next free worker…', 'aria-label': 'New task' }) as HTMLTextAreaElement;
+  if (draft) ta.value = draft.prompt;
   const provider = providerPicker(store.project, 'queue-provider');
   const addBtn = h('button.btn.primary', { type: 'submit' }, 'Add to queue');
   const form = h('form.queue-add', {}, ta, provider.element, addBtn) as HTMLFormElement;
@@ -62,8 +63,9 @@ export function openQueue(net: Net, actions: QueueActions) {
       return;
     }
     if (!provider.valid()) return;
-    net.send({ t: 'queue.add', prompt: text, provider: provider.value(), model: provider.model(), effort: provider.effort() });
+    net.send({ t: 'queue.add', prompt: text, title: draft?.title, provider: provider.value(), model: provider.model(), effort: provider.effort() });
     ta.value = '';
+    draft = undefined;
   };
   form.addEventListener('submit', (e) => {
     e.preventDefault();

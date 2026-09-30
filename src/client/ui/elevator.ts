@@ -53,12 +53,34 @@ export function openElevator(opts: ElevatorOptions): void {
   let selected: string | null = null;
   let adding: string | null = null;
   let error = '';
-  let showAdd = setup || !store.floors.length;
+  let showAdd = false;
   /** The search box and list are in place (rebuilding them would lose the focus mid-typing). */
   let built = false;
 
   const floorsEl = h('div.floors');
   const addEl = h('div.add');
+  const localMode = h('select', { 'aria-label': 'Local project action' },
+    h('option', { value: 'open' }, 'Open existing folder'), h('option', { value: 'create' }, 'Create new folder'));
+  const localPath = h('input', { placeholder: '~/code/my-project', 'aria-label': 'Local project folder', required: true, autocomplete: 'off', spellcheck: 'false' });
+  const localStatus = h('p.note', { role: 'status' }, 'Use a folder on this machine. No GitHub repository needed.');
+  const localSubmit = h('button.btn.primary', { type: 'submit' }, '🛗 Open local floor');
+  const localForm = h('form.local-floor-form', {}, h('h3', {}, '📁 Local project'), localMode, localPath, localStatus, localSubmit);
+  localMode.addEventListener('change', () => { localSubmit.textContent = localMode.value === 'create' ? '✨ Create local floor' : '🛗 Open local floor'; });
+  localForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (localSubmit.disabled) return;
+    localSubmit.disabled = true;
+    localStatus.textContent = 'Opening your project…';
+    try {
+      const response = await fetch('/api/floors/local', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir: localPath.value.trim(), create: localMode.value === 'create' }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'Could not open the floor');
+      modal.close();
+      opts.ride(result.floor);
+    } catch (error) { localStatus.textContent = (error as Error).message; }
+    finally { localSubmit.disabled = false; }
+  });
   const input = h('input', { type: 'text', placeholder: 'Search your repositories, or type owner/name', 'aria-label': 'Repository', autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
   const listEl = h('div.repo-list', { role: 'listbox', 'aria-label': 'Repositories' });
   const statusEl = h('div');
@@ -227,7 +249,7 @@ export function openElevator(opts: ElevatorOptions): void {
 
   const renderAdd = () => {
     if (!showAdd) {
-      const open = h('button.btn', { type: 'button' }, '➕ Add a project');
+      const open = h('button.btn', { type: 'button' }, '🐙 Add from GitHub');
       open.addEventListener('click', () => {
         showAdd = true;
         needRepos();
@@ -266,7 +288,7 @@ export function openElevator(opts: ElevatorOptions): void {
     if (!built) {
       built = true;
       addEl.replaceChildren(
-        h('h3', {}, setup && !store.floors.length ? 'Pick your first project' : '➕ Add a project'),
+        h('h3', {}, setup && !store.floors.length ? 'Pick your first project' : '🐙 Add from GitHub'),
         h('div.repo-search', {}, input, refreshBtn),
         listEl,
         statusEl,
@@ -326,14 +348,14 @@ export function openElevator(opts: ElevatorOptions): void {
         {},
         store.floors.length
           ? 'Every project is a floor of this building. Pick a floor to ride to, or add another project.'
-          : "Every project is a floor of this building, and it doesn't have any yet. Pick one of your repositories: the office clones it and it becomes the first floor.",
+          : "Every project is a floor of this building, and it doesn't have any yet. Open a local folder, create a new project, or clone a GitHub repository.",
       )
     : null;
   const el = h(
     'div.modal.elevator',
     { role: 'dialog', 'aria-label': 'Elevator' },
     h('header', {}, h('h2', {}, setup ? '🏢 Welcome to Agent Office' : '🛗 Elevator'), close),
-    h('div.body', {}, intro, floorsEl, addEl),
+    h('div.body', {}, intro, floorsEl, store.me.admin ? localForm : null, addEl),
     h('footer', {}, h('span.grow', {}, setup ? 'Your office, one floor per project · Esc to look around first' : 'Pick a floor · Esc to stay here'), addBtn),
   );
   const unsubs = [store.on('floors', () => (renderFloors(), renderAdd())), store.on('repos', renderAdd), store.on('projectsDir', () => (editDir(false), renderAdd())), store.on('floor', renderFloors), store.on('peers', renderFloors), store.on('me', () => (renderFloors(), renderAdd()))];

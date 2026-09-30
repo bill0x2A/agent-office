@@ -42,3 +42,11 @@ Local session APIs require an admin login and are disabled when the office binds
 The office browser accepts an address and displays it in a sandboxed iframe. Some applications require cookies, same-origin storage, or forbid embedding; use **Open in tab** for those. Framed pages cannot access the office's session APIs or top-level navigation. The browser does not proxy external pages or bypass framing restrictions.
 
 Movement and camera controls are unchanged: WASD/arrows to walk, mouse to look, **E** to interact, and **Esc** or the top-right **✕** to close a window. Third-person view is available in Settings.
+
+## Local project floors and team panels
+
+Use **Elevator → Local project** to open an existing folder or create a new one.
+The **Linear** and **Slack** toolbar buttons open views saved for the current floor.
+Linear's **Make coworker task** opens a queue draft; it doesn't send a message to
+one of your discovered local sessions. Review the task and select an agent before
+adding it to the queue. See [setup and behavior](local-projects-integrations.md).
