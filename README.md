@@ -1,3 +1,24 @@
+# Little Office — our Agent Office fork
+
+An independent continuation of [AgentSystemLabs/agent-office](https://github.com/AgentSystemLabs/agent-office), with your existing Claude Code and Codex sessions as clickable coworkers and an in-office browser. Changes live in [bill0x2A/agent-office](https://github.com/bill0x2A/agent-office); this fork does not contribute changes upstream automatically.
+
+```sh
+git clone https://github.com/bill0x2A/agent-office.git
+cd agent-office
+npm ci
+npm start
+```
+
+Open the localhost address printed in the terminal. **Local coworkers** shows your existing conversations; click an orange Claude or teal Codex character to read its history and chat in a separate continuation. **Browser** opens previews inside the office. [Local coworker behavior, controls, and limitations](docs/local-coworkers.md).
+
+The **Elevator → Local project** opens an existing folder or creates a new one, with no GitHub requirement. **Linear** shows issues for the current floor and turns them into editable coworker task drafts. **Slack** opens a channel reader inside the office. Connect each service once from its panel, then save a team/project or channel for each floor. See [local projects and integrations](docs/local-projects-integrations.md) for setup and token scopes.
+
+Use the source checkout instructions above for this fork. The original project's release installers and cloud deployment recipes below still target upstream and are retained for reference; do not use them to install or update this fork.
+
+---
+
+## Original project documentation
+
 > [!WARNING]
 > **Work in progress.** Agent Office is built for one person's workflow — mine — and it changes fast as I iterate on it.
 > Expect breaking changes between releases: keys that move, screens that get redrawn, features that come and go

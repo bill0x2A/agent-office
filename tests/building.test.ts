@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Building, type FloorDef } from '../src/server/building.js';
@@ -82,4 +82,52 @@ test('the floor the office was started in comes off too, stays off after a resta
   const third = new Building(dataDir, root);
   assert.equal(third.ensureLocal(defs[0].dir, 'the office')?.id, 'api');
   assert.deepEqual(third.list().map((d) => d.id), ['web', 'docs', 'api']);
+});
+
+
+test('local floors open existing non-git folders in place and survive restart', (t) => {
+  const { root, dataDir } = office(t);
+  const dir = path.join(root, 'my local project');
+  mkdirSync(dir);
+  writeFileSync(path.join(dir, 'notes.txt'), 'Keep my work');
+  const building = new Building(dataDir, root);
+  const result = building.addLocal(dir, false, 'Sam');
+  assert.equal(typeof result, 'object', String(result));
+  assert.equal((result as FloorDef).dir, dir);
+  assert.equal((result as FloorDef).repo, undefined);
+  assert.equal(readFileSync(path.join(dir, 'notes.txt'), 'utf8'), 'Keep my work');
+  assert.ok(new Building(dataDir, root).list().some((d) => d.dir === dir));
+  assert.match(building.addLocal(dir, false, 'Sam') as string, /already has a floor/);
+  const alias = path.join(root, 'alias'); symlinkSync(dir, alias);
+  assert.match(building.addLocal(alias, false, 'Sam') as string, /already has a floor/);
+  building.remove((result as FloorDef).id);
+  assert.ok(existsSync(dir));
+});
+
+test('new local floors create exactly one empty folder and never overwrite existing projects', (t) => {
+  const { root, dataDir } = office(t);
+  const building = new Building(dataDir, root);
+  const dir = path.join(root, 'new-project');
+  assert.match(building.addLocal(dir, false, 'Sam') as string, /not found/);
+  const result = building.addLocal(dir, true, 'Sam');
+  assert.equal(typeof result, 'object', String(result));
+  assert.ok(existsSync(dir));
+  writeFileSync(path.join(dir, 'keep'), 'original');
+  assert.match(building.addLocal(dir, true, 'Sam') as string, /already exists/);
+  assert.equal(readFileSync(path.join(dir, 'keep'), 'utf8'), 'original');
+  assert.match(building.addLocal('relative', true, 'Sam') as string, /full folder path/);
+  assert.match(building.addLocal(path.join(dir, 'keep'), false, 'Sam') as string, /not a file/);
+  assert.match(building.addLocal(path.join(root, 'missing-parent/child'), true, 'Sam') as string, /existing parent/);
+});
+
+test('startup floor can be restored by local path without changing which floor owns office data', (t) => {
+  const { root, dataDir, defs } = office(t);
+  const building = new Building(dataDir, root);
+  building.ensureLocal(defs[0].dir, 'Sam');
+  building.remove('api');
+  const other = building.addLocal(path.join(root, 'new-project'), true, 'Sam') as FloorDef;
+  assert.equal(building.isLocal(other.id), false);
+  const restored = building.addLocal(defs[0].dir, false, 'Sam') as FloorDef;
+  assert.equal(building.isLocal(restored.id), true);
+  assert.equal(new Building(dataDir, root).ensureLocal(defs[0].dir, 'Sam')?.id, restored.id);
 });

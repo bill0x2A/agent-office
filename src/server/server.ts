@@ -1,4 +1,6 @@
+import { Integrations } from './integrations.js';
 import http from 'node:http';
+import { LocalSessions } from './local-sessions.js';
 import https from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -205,6 +207,9 @@ const SEARCH_CHAT_HITS = 50;
 const SEARCH_TERMINAL_HITS = 25;
 
 export async function startServer(cfg: Config) {
+  const localSessions = new LocalSessions();
+  const integrations = new Integrations(cfg.dataDir);
+  const localEnabled = ['127.0.0.1', 'localhost', '::1'].includes(cfg.host);
   const publicDir = findPublicDir();
   const accounts = new Accounts(cfg.dataDir);
   const auth = new Auth(cfg.verifier, cfg.salt, cfg.secret, accounts);
@@ -934,6 +939,68 @@ export async function startServer(cfg: Config) {
         // Back to the 2D view after signing in, if that's where they were going.
         res.writeHead(302, { location: p === '/lite' ? '/login?next=/lite' : '/login' }).end();
         return;
+      }
+      if (p === '/api/floors/local' || p.startsWith('/api/integrations/')) {
+        res.setHeader('Cache-Control', 'no-store');
+        if (!localEnabled || !meOf(session.account?.id).admin) return send(res, 403, { error: 'Available to admins in an office listening on localhost.' });
+        try {
+          if (req.method === 'POST') {
+            if (!sameOrigin(req, cfg)) return send(res, 403, { error: 'Forbidden' });
+            const body = JSON.parse(await readBody(req, 16000));
+            if (p === '/api/floors/local') {
+              if (typeof body.dir !== 'string' || body.dir.length > 4096 || typeof body.create !== 'boolean') return send(res, 400, { error: 'A folder and creation mode are required' });
+              const result = building.addLocal(body.dir, body.create, 'local admin');
+              if (typeof result === 'string') return send(res, 400, { error: result });
+              const floor = openFloor(result);
+              floorsChanged();
+              if (!floor) {
+                building.remove(result.id, 'local admin');
+                return send(res, 400, { error: 'Could not open that floor. Its folder is still on disk. Check the office log, fix the folder, and try again.' });
+              }
+              toastAll(`🛗 New local floor: ${result.name}`);
+              return send(res, 201, { floor: floor.id });
+            }
+            if (p === '/api/integrations/connect' || p === '/api/integrations/disconnect') {
+              if (body.provider !== 'linear' && body.provider !== 'slack') return send(res, 400, { error: 'Choose Linear or Slack' });
+              if (p.endsWith('/connect')) {
+                if (typeof body.token !== 'string') return send(res, 400, { error: 'A token is required' });
+                await integrations.connect(body.provider, body.token.trim());
+              } else integrations.disconnect(body.provider);
+              return send(res, 200, { ok: true });
+            }
+            if (p === '/api/integrations/binding') {
+              if (typeof body.floor !== 'string' || !floors.has(body.floor) || !body.binding || typeof body.binding !== 'object') return send(res, 400, { error: 'Choose an office project floor' });
+              integrations.bind(body.floor, body.binding);
+              return send(res, 200, { ok: true });
+            }
+          } else if (req.method === 'GET') {
+            const floor = url.searchParams.get('floor') ?? '';
+            if (p === '/api/integrations/status') return send(res, 200, integrations.status(floor));
+            if (p === '/api/integrations/linear/catalog') return send(res, 200, await integrations.linearCatalog());
+            if (p === '/api/integrations/slack/channels') return send(res, 200, await integrations.channels(url.searchParams.get('cursor') ?? ''));
+            if (!floors.has(floor)) return send(res, 400, { error: 'Choose an office project floor' });
+            if (p === '/api/integrations/linear/issues') return send(res, 200, await integrations.issues(floor));
+            if (p === '/api/integrations/slack/messages') return send(res, 200, await integrations.messages(floor));
+          }
+          return send(res, 405, { error: 'Unsupported integration request' });
+        } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : 'Could not complete request' }); }
+      }
+      if (p === '/api/local-sessions' || p === '/api/local-sessions/chat') {
+        res.setHeader('Cache-Control', 'no-store');
+        if (!localEnabled || !meOf(session.account?.id).admin) return send(res, 403, { error: 'Local coworkers are available to admins in an office listening on localhost.' });
+        try {
+          if (p === '/api/local-sessions' && req.method === 'GET') {
+            const key = url.searchParams.get('key');
+            return send(res, 200, key ? await localSessions.detail(key) : { sessions: await localSessions.list() });
+          }
+          if (p === '/api/local-sessions/chat' && req.method === 'POST') {
+            if (!sameOrigin(req, cfg)) return send(res, 403, { error: 'Forbidden' });
+            const body = JSON.parse(await readBody(req, 64000));
+            if (typeof body?.key !== 'string' || typeof body?.message !== 'string') return send(res, 400, { error: 'A session and message are required' });
+            return send(res, 202, await localSessions.send(body.key, body.message));
+          }
+          return send(res, 405, { error: 'Method not allowed' });
+        } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message : 'Could not read local sessions' }); }
       }
       if (p === '/api/whoami') return send(res, 200, { ok: true, me: meOf(session.account?.id) });
       if (p === '/api/agents/opencode/models' && req.method === 'GET') {
@@ -2503,6 +2570,7 @@ export async function startServer(cfg: Config) {
 
   /** With `keep` (a restart), workers' terminals keep running for the next office to pick up. */
   const shutdown = (keep = false) => {
+    localSessions.shutdown();
     clearInterval(heartbeat);
     clearInterval(resync);
     clearTimeout(floorsTimer);

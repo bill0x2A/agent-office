@@ -1,5 +1,7 @@
 # agent-office
 
+This is the independent `bill0x2A/agent-office` fork. All pushes and PRs target this fork, never `AgentSystemLabs/agent-office` unless the user explicitly requests it.
+
 - Ship every code change as a PR branched from freshly fetched `origin/main`, and end with the PR URL instead of stopping at a local commit or asking first.
 - The main checkout is shared with other live sessions and board agents, so do branch work in a worktree and never stash, reset or commit anyone else's changes there.
 - Verify with `npm run typecheck`, `npm test` and `npm run build`, plus a headless-browser screenshot for visual changes, rather than slow manual playthroughs.
